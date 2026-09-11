@@ -1,0 +1,50 @@
+{
+  "rule_set_version": "1.0.0-engineering-default",
+  "status": "engineering_adopted_pending_dpo_legal_review",
+  "production_ready_compliance_guidance": false,
+  "disclaimer": "Engineering-adopted defaults pending real DPO/legal review. These rules support triage and are not production-ready compliance guidance or a legal conclusion.",
+  "legal_effective_status_as_of": "2026-09-11",
+  "legal_sources": [
+    "https://www.indiacode.nic.in/bitstream/123456789/22037/2/a2023-22.pdf",
+    "https://www.meity.gov.in/static/uploads/2025/11/53450e6e5dc0bfa85ebd78686cadad39.pdf",
+    "https://www.meity.gov.in/static/uploads/2025/11/c56ceae6c383460ca69577428d36828b.pdf"
+  ],
+  "name_scope": {
+    "languages": ["en", "en-IN-Latn"],
+    "scripts": ["Latin"],
+    "excluded": "Hindi and regional-language scripts are unassessed and disabled pending a labeled corpus and model decision."
+  },
+  "detector_release_gates": {
+    "pan": {"min_precision": 0.99, "min_recall": 0.95, "min_positive_cases": 100, "min_negative_cases": 200},
+    "aadhaar": {"min_precision": 0.995, "min_recall": 0.98, "min_positive_cases": 100, "min_negative_cases": 200},
+    "phone": {"min_precision": 0.98, "min_recall": 0.93, "min_positive_cases": 150, "min_negative_cases": 300},
+    "email": {"min_precision": 0.98, "min_recall": 0.95, "min_positive_cases": 150, "min_negative_cases": 300},
+    "person_name": {"min_precision": 0.95, "min_recall": 0.75, "min_positive_cases": 250, "min_negative_cases": 500}
+  },
+  "governance_context_fields": [
+    "purpose",
+    "data_principal_categories",
+    "recipients",
+    "processors",
+    "cross_border_transfers",
+    "retention_basis",
+    "retention_schedule",
+    "business_owner"
+  ],
+  "control_evidence_fields": {
+    "encryption_at_rest": ["control_state", "evidence_state", "evidence_reference", "verified_at"],
+    "retention_policy": ["control_state", "evidence_state", "evidence_reference", "verified_at"],
+    "access_control": ["control_state", "evidence_state", "evidence_reference", "verified_at"]
+  },
+  "risk_weights": {
+    "pii_impact": {"aadhaar": 4, "pan": 3, "phone": 2, "email": 2, "person_name": 1, "aadhaar_masked": 1},
+    "volume": {"1-9": 0, "10-99": 1, "100-999": 2, "1000+": 3},
+    "control_state": {"present": 0, "absent": 3, "partial": 1, "not_applicable": 0, "unknown": 0}
+  },
+  "band_rules": [
+    {"band": "grey", "when": "coverage is failed, unassessed, or materially incomplete"},
+    {"band": "red", "when": "score is at least 7 and at least one applicable control is confirmed absent"},
+    {"band": "amber", "when": "PII is found and any applicable control is unknown or partial, or a confirmed gap scores below 7"},
+    {"band": "green", "when": "coverage is complete and no engine-detected storage gap remains under supplied evidence"}
+  ]
+}

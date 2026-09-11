@@ -1,0 +1,199 @@
+# Agent Research and Decision Log
+
+## 2026-09-11 08:54 IST - Intake and scope
+
+- Read the supplied v2 project plan in full before taking repository action.
+- Confirmed the workspace contains no implementation or prior documentation; the supplied plan is therefore the sole project baseline.
+- Applied the requested `using-agent-skills` workflow, which selected `planning-and-task-breakdown`, `source-driven-development`, and `documentation-and-adrs` for this research-and-planning task.
+- Scope decision: create or update only `Docs/build-plan.md` and `Docs/agent-log.md`; do not implement code, commit, or push.
+- Working assumptions: PostgreSQL is the application metadata store; PostgreSQL and MySQL are scan targets; a target is identified by a canonical non-secret fingerprint; unresolved product choices will be explicit open questions or decision gates rather than silently invented requirements.
+- Research sequence: authoritative DPDPA/DPDP Rules sources, Indian identifier authorities, RoPA guidance, spaCy documentation, database-driver documentation, and filesystem traversal/security guidance.
+
+## 2026-09-11 08:56 IST - DPDPA legal baseline
+
+- Read the official India Code text of the Digital Personal Data Protection Act, 2023 and MeitY's final Digital Personal Data Protection Rules, 2025 plus commencement notification.
+- Timing finding: the 13 November 2025 commencement notification brings Sections 7-10 (including Section 8) into force 18 months after publication; Rules 5-16 likewise commence after 18 months. On the working date, these provisions are notified but not yet operative. The product must store/display the legal-source version and effective date instead of presenting every rule as currently enforceable.
+- Section 8 scope: accuracy/completeness/consistency where data affects decisions or disclosure; processor accountability; reasonable technical and organisational measures; reasonable security safeguards; breach notification; erasure when consent is withdrawn or purpose is no longer served unless retention is legally necessary; and processor erasure/contact-channel duties.
+- Rule 6 minimum safeguards include encryption/obfuscation/masking/tokenisation, access controls, access visibility through logs/monitoring/review, resilience/backups, one-year retention for relevant security logs/data, processor-contract safeguards, and organisational measures.
+- Rule 8 contains contextual retention requirements. Its scheduled three-year inactivity rule applies only to listed large e-commerce, online gaming, and social-media classes, while processing data and logs also has a one-year minimum for specified state-access purposes. Decision: never encode a universal "retain for N days" rule.
+- Product implication: discovery can prove that identifiers exist and can collect operator-attested control metadata, but it cannot infer purpose, lawful retention need, effective access control, or encryption-at-rest from content alone. Heatmap output must separate observed evidence, operator assertions, unknowns, and rule applicability.
+- Sources: https://www.indiacode.nic.in/bitstream/123456789/22037/2/a2023-22.pdf ; https://www.meity.gov.in/static/uploads/2025/11/53450e6e5dc0bfa85ebd78686cadad39.pdf ; https://www.meity.gov.in/static/uploads/2025/11/c56ceae6c383460ca69577428d36828b.pdf
+
+## 2026-09-11 08:59 IST - Inventory format and Indian identifier detection
+
+- Confirmed that the DPDP Act/Rules do not prescribe a GDPR-style Record of Processing Activities schema. Decision: call the automated result a "Data Inventory / RoPA-style extract," not a statutory DPDP RoPA, and leave purpose, lawful basis/legitimate use, data-principal category, recipients, transfers, retention basis, processor, owner, and controls as governed metadata completed or attested by humans.
+- Used the ICO Article 30 checklist and EDPB example only as a mature reference format: processing purpose; categories of people/data; recipients; transfers; retention; technical/organisational measures; controller/processor/DPO contacts. These are reference fields, not claims about Indian statutory requirements.
+- PAN: official Income Tax material confirms ten alphanumeric characters: five letters, four digits, one letter. Decision: use boundary-aware uppercase matching and contextual confidence; do not claim a regex match proves issuance or validity.
+- Aadhaar: UIDAI describes a 12-digit random number and directs client-side validation against the Verhoeff checksum. Decision: normalize permitted separators, require 12 digits plus checksum, distinguish full and masked Aadhaar, and never persist matched digits. UIDAI's current rules also make full Aadhaar storage a distinct risk signal, not merely another generic identifier.
+- Phone: accept common Indian representations (`+91`, `91`, optional zero/punctuation) only after normalization to a ten-digit national number; preserve configurable numbering-series validation because allocations evolve. Avoid matching embedded digit runs, dates, invoice IDs, or account-like strings.
+- Email: use pragmatic candidate detection with boundaries and length constraints, not an attempted full RFC grammar. Names are context-dependent and must come from NER/column-name hints with lower default confidence than checksum identifiers.
+- False-positive controls selected: checksum where available, token boundaries, label/header/context boosts, invalidation context, per-detector confidence, deduplication within a location, synthetic negative corpora, and threshold calibration. A raw regex hit count is insufficient evidence.
+- Sources: https://www.incometax.gov.in/iec/foportal/node/11593 ; https://www.uidai.gov.in/en/286-english-uk/faqs/your-aadhaar/aadhaar-features%2C-eligibility/1933-what-is-aadhaar.html ; https://uidai.gov.in/en/ecosystem/authentication-devices-documents/developer-section/data-and-downloads-section.html ; https://uidai.gov.in/images/The_Aadhaar_Authentication_and_Offline_Verifications_Regulations_2021-_Clean_copy-30122025.pdf ; https://ico.org.uk/for-organisations/advice-and-services/audits/data-protection-audit-framework/toolkits/accountability/records-of-processing-and-lawful-basis/ ; https://www.edpb.europa.eu/system/files/2023-10/cc_farmaindustria_vfinal_230222_en-rev.pdf
+
+## 2026-09-11 09:01 IST - NLP strategy
+
+- Read spaCy's official NER, processing-pipeline, model, and rule-matching guidance plus Microsoft's Presidio analyzer design as a primary implementation reference.
+- Finding: `en_core_web_sm` is general-purpose English NER, not a PII classifier. Its `PERSON` spans can seed name candidates but require domain evaluation; spaCy notes whole-entity boundary assumptions and non-overlapping entities.
+- Decision: deterministic recognizers own PAN, Aadhaar, phone, and email; spaCy NER is limited initially to `PERSON` name candidates. Combine results in one scoring/deduplication stage rather than treating all detections equally.
+- Performance decision: stream bounded text chunks through `nlp.pipe`, batch them, and load only components needed for NER. Carry source coordinates as tuple context. Never turn the generator into an unbounded list.
+- Quality decision: maintain a versioned synthetic evaluation corpus with positives, near misses, and enterprise false-positive cases (invoice numbers, SKUs, timestamps, tracking IDs, uppercase codes, email-like log tokens). Report precision/recall by detector and require a DPO-review threshold before calling name detection production-ready.
+- Sources: https://spacy.io/api/entityrecognizer ; https://spacy.io/usage/processing-pipelines ; https://spacy.io/usage/rule-based-matching/ ; https://microsoft.github.io/presidio/analyzer/
+
+## 2026-09-11 09:03 IST - Read-only database scans
+
+- Read PostgreSQL transaction-mode, Psycopg server-cursor/transaction, MySQL read-only transaction/unbuffered cursor, and SQLAlchemy streaming guidance.
+- Decision: every target connection gets TLS verification options, short connect/statement/read timeouts, an engine-level read-only transaction, schema/table allowlists, quoted identifiers via the driver/SQLAlchemy expression layer, and streaming fixed-size batches. Never call `fetchall()`/`Result.all()` on target data.
+- PostgreSQL: set the transaction read-only before any scan query and use a named/server-side cursor. MySQL: `START TRANSACTION READ ONLY` plus an unbuffered cursor. Read-only transaction modes still permit some temporary-table behavior and do not prove that the login itself lacks write grants.
+- Rejected the proposed future "attempt a harmless write and confirm rejection" pre-flight. It contradicts strict read-only execution, may cause side effects through triggers/audit logs, and is not a complete privilege proof. Replace it with non-mutating privilege introspection, enforced read-only transactions, a scanner-owned SELECT-only statement surface, and a clearly reported result of `verified_limited`, `overprivileged`, or `unverifiable`.
+- Connection lifecycle decision: one target connection per active DB job, no long-lived general pool (`NullPool`/equivalent), so credentials and idle target sessions are not retained. Always close/rollback on cancellation or failure.
+- Load decision: full-scan correctness is the default; configurable chunk size, table/column inclusion, per-statement timeout, and per-target concurrency are calibration controls. Sampling, if later added, must be labeled estimated and cannot satisfy exact volume acceptance criteria.
+- Sources: https://www.postgresql.org/docs/current/sql-set-transaction.html ; https://www.psycopg.org/psycopg3/docs/advanced/cursors.html ; https://www.psycopg.org/psycopg3/docs/basic/transactions.html ; https://dev.mysql.com/doc/refman/26.7/en/commit.html ; https://dev.mysql.com/doc/connector-python/en/connector-python-connectargs.html ; https://docs.sqlalchemy.org/en/20/core/engines_connections.html
+
+## 2026-09-11 09:05 IST - File and network-share traversal
+
+- Read Python 3.11 `os.walk`/`scandir` and CSV documentation and openpyxl's optimized read-only mode.
+- Decision: traverse top-down without following symlinks/reparse points, prune excluded/hidden/system directories, sort entries for deterministic runs, surface every permission/I/O error in job coverage metrics, and distinguish partial completion from a clean negative result.
+- Stream TXT with an incremental decoder and bounded overlapping chunks; stream CSV logical rows with the stdlib parser and explicit field limits; stream XLSX using openpyxl `read_only=True`/`data_only=True`, closing workbooks explicitly. Legacy `.xls` is an open scope question because openpyxl does not support it.
+- Guardrails required for large/untrusted files: allowed extension list, per-file and per-field/cell limits, total-byte/time budgets, cancellation checks, decompressed XLSX size/entry limits, and a skip/error reason per unscanned file. A file changing during scan is recorded as unstable rather than silently treated as complete.
+- Network-share decision: the directory adapter consumes paths already readable by the service OS. On Linux, UNC/SMB shares must be mounted by Infra; the application should not embed an SMB credential manager because credential provisioning is explicitly out of scope. Direct UNC works only on an OS/runtime that resolves it. Preflight reports `not_found`, `permission_denied`, `unsupported_path`, and `readable` distinctly.
+- Sources: https://docs.python.org/3.11/library/os.html ; https://docs.python.org/3.11/library/csv.html ; https://openpyxl.readthedocs.io/en/stable/optimized.html
+
+## 2026-09-11 09:06 IST - Job execution, secrets, and failure isolation
+
+- FastAPI explicitly cautions that heavy background computation generally needs a worker system rather than request-process `BackgroundTasks`. The proposed scans are long-running and blocking, so route-level background tasks are not an adequate production runner.
+- Constraint conflict: a durable external queue requires a worker to retrieve connection secrets after the request ends, while the plan promises credentials are memory-only and defines neither a secret manager nor a secret reference. Persisting credentials in `scan_jobs` or queue payloads is rejected.
+- Concrete v1 decision: use a bounded in-process scan coordinator (not FastAPI `BackgroundTasks`) with an in-memory secret registry, one scanner thread/process per permitted target, and durable metadata/progress in PostgreSQL. Deploy the API as one scan-coordinator instance. On restart, mark orphaned `pending`/`running` jobs `failed` with `access_context_lost`; operators can retry with credentials. This preserves the zero-secret-persistence promise at the cost of restart recovery and horizontal scaling.
+- Upgrade gate: before multi-replica/HA deployment, introduce an organisation-approved secret manager and enqueue only short-lived secret references; then move runners to separate workers. Do not add Redis/Celery speculatively.
+- Same-target exclusion: derive an HMAC fingerprint from canonical target identity (DB engine + normalized host/port/database, or canonical filesystem path) using an application key, store only the fingerprint, and enforce one active job per fingerprint with a PostgreSQL partial unique index. Never include usernames/passwords in the fingerprint.
+- Batch status is derived from children, never maintained as a competing mutable status. A batch may be `pending`, `running`, `completed`, `completed_with_failures`, or `failed` (all jobs failed). Job status needs `pending`, `validating`, `running`, `completed`, `completed_with_warnings`, `failed`, and `cancelled`; clean no-findings is `completed` with zero findings.
+- Source: https://fastapi.tiangolo.com/tutorial/background-tasks/ ; https://www.postgresql.org/docs/current/sql-select.html (queue-like `SKIP LOCKED` behavior considered for the later durable-worker upgrade).
+
+## 2026-09-11 09:07 IST - Zero-storage boundary and reporting model
+
+- Identified a contradiction in "zero PII stored": an audit inventory must persist table/file/path/column locators, but those metadata strings can themselves contain personal data (for example, a file named after an employee). Absolute zero-PII persistence cannot be guaranteed while preserving actionable locations.
+- Decision: define the enforceable invariant as "zero matched-value persistence." Matched substrings, source rows/cells, excerpts, hashes of values, and NLP text never cross the scanner aggregation boundary. Location metadata is necessary audit metadata, is access-controlled, and should be normalized/redacted where possible; it must be covered by the application's own retention and security controls.
+- Reporting schema decision: normalize inventory rows and remediation findings rather than keeping the complete report only in one JSON blob. This supports server-side filtering/pagination and batch aggregation without loading every finding into API memory. Keep `scan_reports.report_json` as a small versioned summary snapshot.
+- Each inventory item stores job/location locator, PII type, match count, scanned-unit count, confidence band, detector/rule version, control-evidence states, risk score/band, and warnings only. It never stores samples. Counts mean occurrences and units-with-findings separately; "records" is reserved for DB rows/CSV rows, not regex matches.
+- Risk scoring must be transparent and deterministic. Unknown control state is not equivalent to confirmed plaintext/no retention. Return score inputs, evidence provenance (`observed`, `operator_attested`, `unknown`), applicable legal/control reference, and rule-set version so a DPO can review rather than accept an opaque compliance verdict.
+
+## 2026-09-11 09:08 IST - Ambiguities and scope decisions
+
+- Legal scope: the scanner cannot determine whether a person is Indian or whether a processing activity falls within territorial/application scope. "Indian PII" will mean India-specific identifier formats, while DPDP applicability remains a DPO/legal determination.
+- Assessment scope: the engine can assess a subset of Section 8 evidence (data location, identifier exposure, stated retention/security controls). It cannot establish processing purpose, legal necessity, accuracy, processor-contract compliance, breach response readiness, or overall compliance automatically. Output title should be "Section 8-aligned storage gap assessment" with a coverage statement.
+- "Plaintext storage" is not observable merely because a DB query or file read returns clear text; transparent disk/database encryption decrypts for authorised readers. The scanner records content visibility plus operator-attested/externally evidenced encryption-at-rest state. `unknown` must remain distinct from `no`.
+- Retention controls likewise cannot be inferred from file age or a timestamp column. Record file modification age as an observation, and collect retention schedule/status/evidence as governance metadata. Do not convert age into a statutory breach without a purpose/applicability rule.
+- API inconsistency: goals include MySQL, but named single-scan endpoints include only PostgreSQL and Definition of Done mentions only PostgreSQL. Decision: MySQL remains in v2 scope and gets the same generic database contract; one batch endpoint is canonical. Legacy-style `/scans/postgres`, `/scans/mysql`, and `/scans/directory` may be thin one-target convenience routes only if clients need them.
+- Report identifier ambiguity: routes say `/reports/:id` without saying report ID or job ID. Decision: address reports by job ID because a job has one current report, and batch reports by batch ID.
+- File format ambiguity: "Excel" is not versioned. Decision: `.xlsx` is baseline; `.xls` requires an explicit later dependency/acceptance decision. Archives, PDFs, images, macros, and OCR remain excluded.
+- Path semantics: a browser cannot grant the server access to an operator's workstation path. The form labels paths as server/service-visible paths and preflight verifies them.
+- "Alert" ambiguity: implement in-app state change/toast based on polling. Email/SMS/webhook notification is not specified and is excluded.
+- Settings/custom-rule tension: the plan lists regex tuning now but a custom rule builder as future. Decision: v2 Settings can select versioned built-in detectors and tune thresholds/limits; arbitrary user-authored regex is excluded until the future rule builder has validation and ReDoS controls. "Custom identifiers" means preconfigured rules deployed by an administrator.
+- Metric definitions: persist `match_count` (occurrences), `units_with_pii` (rows/cells/text chunks containing at least one match), `units_scanned`, and `bytes_scanned`. Do not label every regex occurrence a "record," and do not compute distinct-person counts from retained values/hashes.
+- Security boundary: operators are trusted but target hosts and paths are still SSRF/local-file access inputs. Deployments must restrict allowed database CIDRs/DNS suffixes and directory roots, reject app metadata DB/self-scan targets by fingerprint, use TLS verification, and audit attempts without secrets.
+
+## 2026-09-11 09:10 IST - Plan synthesis and verification
+
+- Wrote `Docs/build-plan.md` with the corrected scope, evidence model, dependency graph, scan flows, detector contract, schema, API contract, repository layout, 18 implementable tasks, checkpoints, test matrix, operational controls, risks, open decisions, and source links.
+- Applied `planning-and-task-breakdown`: every implementation task includes acceptance criteria, verification, dependencies, likely files, and a bounded size; high-risk aggregate-only detection and read-only target access occur before UI work.
+- Applied `source-driven-development`: architecture claims cite official legislation/regulator, framework, library, database, and Python documentation. No dependency versions were invented because the repository has no manifests; version pinning is an explicit bootstrap task.
+- Applied `documentation-and-adrs`: recorded why the major choices were made and preserved rejected alternatives/tradeoffs in this log and plan. Separate ADR files were not created because this task permits only two requested documents and no implementation has begun.
+- Verification: only `DPMAP/Docs/build-plan.md` and `DPMAP/Docs/agent-log.md` exist as files; no source code, commit, or push was created. Checked both documents for placeholders/typos and confirmed all 18 tasks contain acceptance and verification sections.
+
+## 2026-09-11 09:25 IST - Task 1 started
+
+- Selected Task 1, "Freeze terminology, rule set, and acceptance corpus," as the next unstarted task in dependency order.
+- Applied the `incremental-implementation`, `test-driven-development`, and `source-driven-development` workflows. No dependency manifests exist yet, so there are no framework versions to detect; version selection remains Task 2.
+- Re-read the complete build plan, task acceptance criteria, and Open Questions before creating fixtures or executable rules.
+
+## 2026-09-11 09:26 IST - Task 1 blocked at an explicit decision gate
+
+- Task 1 requires DPO-approved heatmap meanings and quantitative detector release gates. Build-plan Open Question 4 explicitly reserves detector thresholds and representative test text for DPO review; Open Question 5 reserves Hindi/regional-language name scope; Open Question 6 reserves risk weights, bands, and governance evidence fields for Legal/DPO ownership.
+- Stopped before creating the corpus or risk configuration because choosing these values would silently decide legal/compliance-scope questions, contrary to the autonomous-mode hard limit. Existing source research remains sufficient; the blocker is organisational approval/input rather than missing technical documentation.
+- Created `README.md` with requested badges, architecture, factual docs-only setup, current usage availability, status checklist, and links. It labels Task 1 blocked and does not claim that a runnable application exists.
+- Rejected alternative: inventing conservative thresholds or marking the plan itself as DPO approval. Neither supplies domain-representative evidence, and the accepted plan still names these as open questions.
+
+## 2026-09-11 09:31 IST - Task 1 authorization and defaults
+
+- The project owner explicitly authorized the agent to act as de facto product/DPO decision-maker for build-plan Open Questions 4-6 and requested conservative defaults labeled as engineering-adopted, pending real DPO/legal review, and not production-ready compliance guidance.
+- Adopted detector gates: PAN precision/recall 0.99/0.95; Aadhaar 0.995/0.98; phone 0.98/0.93; email 0.98/0.95; person name 0.95/0.75. Minimum release corpus sizes are 100/200 positive/negative for PAN and Aadhaar, 150/300 for phone and email, and 250/500 for names. These are engineering risk tolerances, not externally sourced legal standards.
+- Limited name detection to English and Indian names in Latin script. Hindi and regional-language scripts remain disabled/unassessed until an appropriate labeled corpus and model are reviewed.
+- Adopted deterministic risk defaults: impact weights Aadhaar 4, PAN 3, phone/email 2, person name/masked Aadhaar 1; volume adds 0-3; absent applicable controls add 3 and partial controls add 1. Red requires score at least 7 plus a confirmed absent control; unknown/partial evidence is amber; failed/materially incomplete coverage is grey; green means no engine-detected storage gap under supplied evidence, never legal compliance.
+- Exact governance fields and evidence states are versioned in rules.v1.json. All artifacts carry the mandated non-production/legal-review disclaimer.
+- Used UIDAI's officially published sandbox Aadhaar 999999990019 for positive checksum examples rather than inventing a possible resident number. Source: https://uidai.gov.in/en/915-developer-section/tutorial-section.html
+
+## 2026-09-11 09:38 IST - Task 1 completed
+
+- Added a Draft 2020-12 corpus schema, 30-case synthetic seed corpus, versioned assessment defaults, and engineering quality-baseline review record.
+- Verified both JSON files parse, the corpus schema itself is valid, the corpus validates against it, case IDs are unique, and every built-in detector has at least two positive and two negative cases including a near miss or known false-positive pattern.
+- Task 1 acceptance is satisfied under the owner's interim product/DPO authorization. The full release-corpus size gates and qualified external DPO/legal sign-off remain visibly unchecked production gates, not silent placeholders.
+- Verification result: 30 synthetic cases validated across PAN, Aadhaar, Indian phone, email, and Latin-script person-name detectors.
+
+## 2026-09-11 09:39 IST - Task 2 started
+
+- Selected Task 2, project bootstrap and CI, after Task 1 passed.
+- Scope: pin a Python 3.11 FastAPI backend and React/Vite/TypeScript/Tailwind frontend; add the smallest runnable health/UI slices, lint/tests/build commands, reproducible spaCy model installation, and GitHub Actions. Scanner behavior remains out of scope.
+
+## 2026-09-11 09:59 IST - Task 2 dependency and test baseline
+
+- Selected exact direct dependency versions and generated lockfiles instead of allowing floating installs. Python is constrained to 3.11; the local environment resolved CPython 3.11.15. The frontend is constrained to Node 24.19.0 and npm 11.19.0 because Vite 8 requires Node 20.19+ or 22.12+, and Vitest 5 supports Node 24.
+- Installed `en_core_web_sm` 3.8.0 from its exact official release wheel as a normal project dependency. spaCy recommends direct wheel installation for automated environments, and the lockfile records its hash and compatible spaCy 3.8.16 graph. Sources: https://spacy.io/usage/models ; https://docs.astral.sh/uv/concepts/projects/sync/
+- The first frontend pin set produced one moderate, one high, and one critical `npm audit` finding affecting older Vite/Vitest lines (GHSA-93m4-6634-74q7, GHSA-4w7w-66w2-5vf9, GHSA-v2wj-q39q-566r, GHSA-p9ff-h696-f583, GHSA-fx2h-pf6j-xcff, GHSA-5xrq-8626-4rwp, and GHSA-82fw-gwwq-j7x9). Replaced it before implementation with Vite 8.2.2 and Vitest 5.0.0; the regenerated dependency tree reports zero known vulnerabilities.
+- Kept Task 2 deliberately small: FastAPI, Uvicorn, spaCy/model, and test tooling on the backend; React, Vite, TypeScript, Tailwind, and test/lint tooling on the frontend. SQLAlchemy, DB drivers, auth, and reporting dependencies remain owned by later tasks rather than being installed speculatively.
+- Wrote smoke tests before app entry points and observed the intended failures (`dpmap.main` and `App` missing). Starlette's transitional `TestClient` paths hung with both deprecated `httpx` and current `httpx2` in this environment, so the bootstrap unit test verifies route registration and handler output directly; later API integration tests will select a confirmed client stack. Sources: https://www.starlette.io/testclient/ ; https://pypi.org/project/httpx2/
+
+## 2026-09-11 10:02 IST - Task 2 completed
+
+- Added the minimal FastAPI entry point and `/health` route, React/Vite/Tailwind entry point and accessible empty state, exact Python and npm dependency locks, runtime-version files, lint/test/build configuration, root ignore rules, and a two-job GitHub Actions workflow.
+- CI follows official action guidance: read-only repository permissions, Python 3.11.15, Node 24.19.0, locked installs, backend lint/tests with coverage, and frontend lint/tests/build. The uv setup action is pinned to the SHA published in uv's GitHub Actions guide; official GitHub examples support `actions/checkout@v6`, `actions/setup-python@v7`, and `actions/setup-node@v6`. Sources: https://docs.astral.sh/uv/guides/integration/github/ ; https://github.com/actions/setup-python ; https://github.com/actions/setup-node ; https://github.com/actions/checkout
+- Verification passed: backend `flake8`; 3 pytest tests; 100% coverage across the seven executable backend statements; clean `npm ci`; ESLint; 1 Vitest test; Vite production build; zero npm audit findings; CI YAML parse; and a real Uvicorn request returning HTTP 200 with `{"status":"ok","version":"0.1.0"}`. The attempted ports 8000 and 8011 were already occupied in the sandbox; verification used 8765 and the process was stopped afterward.
+- Updated `README.md` with exact framework/runtime badges, tested installation and run commands, current health usage, coverage, architecture, and task status. No credential, secret, source data, or matched PII value was written anywhere.
+- Task 3 is the next dependency-ordered task. It intersects unresolved Open Question 4 (metadata/report/audit retention and locator encryption or pseudonymization), which the build plan marks as owner approval required; no Task 3 schema decision was made here.
+
+## 2026-09-11 10:04 IST - Task 3 decision gate
+
+- Read Task 3 and the remaining open questions before starting schema tests. Open Question 4 is a genuine dependency: encrypting or pseudonymizing location locators changes column types, uniqueness, filtering, key management, and breach/retention behavior; the retention periods also determine cleanup and audit-preservation requirements.
+- Stopped before Task 3 implementation under the plan's explicit owner-approval rule. The earlier de facto product/DPO authorization covered the original detector-gate, language-scope, and risk-rule Questions 4-6 that are now listed under `Resolved Decision Gates`; it did not decide this newly renumbered metadata-retention question.
+- Updated the README to show Task 2 complete and Task 3 blocked. The verified frontend and backend development servers remain available locally at `http://127.0.0.1:5173/` and `http://127.0.0.1:8765/health` for inspection.
+
+## 2026-09-11 10:07 IST - Task 3 authorized and resumed
+
+- The project owner resolved metadata Open Question 4: hard-delete `scan_jobs`, `scan_inventory_items`, `remediation_items`, and associated scan reports 90 days after job completion; retain `audit_events` for one year. These values are engineering-adopted defaults pending real DPO/legal review, not production-ready compliance guidance.
+- Location and field locators will be stored as plain text in v1, protected only by application RBAC and the app PostgreSQL database's access controls. They are explicitly not column-level encrypted or pseudonymized. This is a v1 security/privacy limitation, not a claim that locator metadata is encrypted at rest.
+- Schema judgment: calculate expiry from `scan_jobs.finished_at` and `audit_events.created_at`; do not duplicate derived deadlines in mutable columns. Child rows and reports will use cascading foreign keys so the later retention worker can hard-delete an expired job atomically. User records, batches, and authentication sessions were not assigned a retention period by this decision and must not be silently swept with scan metadata.
+- Task 3 resumed and README status changed from blocked to in progress before implementation.
+
+## 2026-09-11 10:24 IST - Task 3 completed
+
+- Added pinned SQLAlchemy 2.0.52, Alembic 1.19.2, and Psycopg 3.3.5 dependencies; declarative models for all eight accepted metadata tables; and an explicit initial Alembic migration. Official sources confirm named database constraints, PostgreSQL JSONB/UUID support, foreign-key `ON DELETE` behavior, and Psycopg 3 as the current adapter. Sources: https://docs.sqlalchemy.org/en/20/core/constraints.html ; https://docs.sqlalchemy.org/en/20/dialects/postgresql.html ; https://docs.sqlalchemy.org/en/20/orm/large_collections.html ; https://pypi.org/project/SQLAlchemy/ ; https://pypi.org/project/alembic/ ; https://pypi.org/project/psycopg/
+- PostgreSQL owns the invariants: normalized user email and role; job target type/engine compatibility; enumerated statuses; 0-100 progress; terminal timestamps; 100% completion progress; error/status consistency; nonnegative counters; inventory count relationships; report/remediation bounds; one active job per target fingerprint through a partial unique index; and null-safe inventory identity through a functional unique index.
+- Foreign keys hard-delete inventory, remediation, and report rows with an expired job. Audit events deliberately do not cascade from jobs and can outlive scan metadata for their one-year schedule. The cleanup scheduler is explicitly not implemented in Task 3 and production must not claim automatic retention enforcement yet.
+- Documented the 90-day and one-year engineering defaults plus the plain-text locator limitation in `Docs/data-retention.md`. ORM/migration column comments also identify locator fields as unencrypted/pseudonymized in v1. No database column accepts raw credentials, matched values, excerpts, source records, samples, or value hashes.
+- Verification on disposable PostgreSQL 17: migration upgrade and downgrade passed; invalid status, progress, terminal state, and concurrent-target inserts were rejected; completed targets became reusable; scan child rows cascaded on job deletion; schema inspection found no forbidden columns; `alembic check` reported no drift; backend lint passed; and all 4 backend tests passed at 100% coverage. CI now provisions PostgreSQL and supplies only a passwordless localhost test URL, so the integration test cannot silently skip there.
+
+## 2026-09-11 10:33 IST - Task 4 started and security research
+
+- Selected Task 4, authentication and RBAC, after Task 3 passed. No unresolved legal/compliance open question affects this task.
+- Adopted Argon2id with 19 MiB memory, two iterations, and one lane, matching OWASP's minimum recommended configuration. Passwords will be accepted only in request memory or a hidden bootstrap prompt, hashed with a per-password salt supplied by Argon2, and never logged, stored in plaintext, accepted as a CLI argument, or returned. Source: https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html
+- Adopted 15-minute HS256 access tokens with a deployment-provided secret of at least 32 bytes. Decode uses a fixed algorithm plus required `sub`, `jti`, `iat`, `nbf`, `exp`, `iss`, and `aud` claims and validates issuer/audience. PyJWT warns against selecting algorithms from attacker-controlled token headers and only verifies time claims reliably when required. Sources: https://pyjwt.readthedocs.io/en/latest/usage.html ; https://pyjwt.readthedocs.io/en/stable/
+- Every authenticated request will resolve the JTI and user from PostgreSQL, rejecting missing, malformed, expired, revoked, or inactive sessions. This costs one metadata query per request but makes logout and account deactivation effective immediately; stateless JWT-only authorization was rejected because it cannot meet revocation acceptance.
+- Login failures will be generic and perform an Argon2 verification against a fixed dummy hash when the account is absent to reduce username enumeration timing differences. Successful hashes are eligible for rehash on login when parameters change, as supported by argon2-cffi. Source: https://argon2-cffi.readthedocs.io/en/stable/
+- Initial Admin creation will be a local CLI operation that succeeds only when no user exists. There is no registration endpoint. README status changed to Task 4 in progress before implementation.
+
+## 2026-09-11 10:38 IST - Task 4 implementation
+
+- Added Argon2id password hashing, fixed-algorithm JWT encoding/validation, revocable JTI-backed sessions, generic login failures with dummy-hash verification, inactive-user rejection, role dependencies, sanitized API errors, login/logout routes, application-DB session wiring, and initial-Admin CLI bootstrap.
+- Added pinned `argon2-cffi` and `PyJWT` dependencies to the existing lockfile. Credentials remain request-memory-only; the schema stores password hashes and session identifiers, never passwords or raw tokens.
+- Wired authentication routes and the API error handler into the existing FastAPI application. No public registration endpoint or scanner/report behavior was added.
+
+## 2026-09-11 10:40 IST - Task 4 interrupted during test construction
+
+- Added focused security, CLI, and PostgreSQL-backed authentication tests covering login failure parity, Admin/Auditor authorization, logout revocation, token expiry, inactive users, audit events, and bootstrap constraints.
+- The session ended before verification. The integration test was left with its `try` block incorrectly nested after the test-only export route return, so Task 4 remained in progress.
+
+## 2026-09-11 23:01 IST - Task 4 resumed and completed
+
+- Recreated `.venv` from `uv.lock` with CPython 3.11.15 after its prior `/tmp` interpreter target disappeared, then confirmed the locked environment was synchronized.
+- Corrected the interrupted integration-test structure without changing its intent. Fixed two lint findings and added the minimum missing branch checks required by the repository's existing 100% coverage gate.
+- Confirmed Docker access and ran a disposable `postgres:17-alpine` instance. The first sandboxed DB run could not reach the published localhost port; the required unsandboxed rerun connected to the real PostgreSQL instance and executed both integration tests without skips.
+- Final verification passed: `flake8 src tests`; 9 backend tests including authentication and migration integration tests; 100% statement and branch coverage. Revoked/expired tokens and inactive users are rejected, Admin and Auditor satisfy the export role dependency, and login/logout audit events contain no tested password values.
+- Task 4 is complete. README and the build plan now reflect the authentication surface and verified test count; scanner and reporting endpoints remain unimplemented.

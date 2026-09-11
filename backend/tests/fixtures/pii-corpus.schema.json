@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dpmap.local/schemas/pii-corpus.schema.json",
+  "title": "DPMAP synthetic PII evaluation corpus",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "classification", "languages", "cases"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "classification": {"const": "SYNTHETIC_TEST_DATA_ONLY"},
+    "languages": {"type": "array", "const": ["en", "en-IN-Latn"]},
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "detector", "text", "expected", "tags"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]+$"},
+          "detector": {
+            "enum": ["pan", "aadhaar", "phone", "email", "person_name", "mixed"]
+          },
+          "text": {"type": "string", "minLength": 1},
+          "expected": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "count"],
+              "properties": {
+                "type": {
+                  "enum": ["pan", "aadhaar", "aadhaar_masked", "phone", "email", "person_name"]
+                },
+                "count": {"type": "integer", "minimum": 1}
+              }
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+            "uniqueItems": true
+          },
+          "note": {"type": "string"}
+        }
+      }
+    }
+  }
+}

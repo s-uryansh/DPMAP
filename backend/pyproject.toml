@@ -1,0 +1,40 @@
+[project]
+name = "dpmap"
+version = "0.1.0"
+description = "Read-only DPDPA data mapping and Section 8-aligned gap assessment engine"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "alembic==1.19.2",
+    "argon2-cffi==25.1.0",
+    "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
+    "fastapi==0.141.1",
+    "psycopg[binary]==3.3.5",
+    "pyjwt==2.13.0",
+    "sqlalchemy==2.0.52",
+    "spacy==3.8.16",
+    "uvicorn==0.52.0",
+]
+
+[dependency-groups]
+dev = [
+    "flake8==7.3.0",
+    "jsonschema==4.26.0",
+    "pytest==9.0.2",
+    "pytest-cov==7.0.0",
+]
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers"
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["dpmap"]
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+
+[tool.uv]
+package = false

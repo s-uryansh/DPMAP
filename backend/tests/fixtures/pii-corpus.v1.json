@@ -1,0 +1,221 @@
+{
+  "schema_version": "1.0.0",
+  "classification": "SYNTHETIC_TEST_DATA_ONLY",
+  "languages": ["en", "en-IN-Latn"],
+  "cases": [
+    {
+      "id": "pan-labelled-uppercase",
+      "detector": "pan",
+      "text": "Test PAN: ABCDE1234F",
+      "expected": [{"type": "pan", "count": 1}],
+      "tags": ["positive", "labelled", "synthetic"]
+    },
+    {
+      "id": "pan-labelled-lowercase",
+      "detector": "pan",
+      "text": "pan abcde1234f",
+      "expected": [{"type": "pan", "count": 1}],
+      "tags": ["positive", "normalization", "synthetic"]
+    },
+    {
+      "id": "pan-invalid-letter-position",
+      "detector": "pan",
+      "text": "Reference AB1DE1234F is not a PAN.",
+      "expected": [],
+      "tags": ["negative", "near-miss"]
+    },
+    {
+      "id": "pan-embedded-code",
+      "detector": "pan",
+      "text": "SKU-XABCDE1234FY-END",
+      "expected": [],
+      "tags": ["negative", "boundary", "sku"]
+    },
+    {
+      "id": "pan-wrong-tail",
+      "detector": "pan",
+      "text": "ABCDE12345",
+      "expected": [],
+      "tags": ["negative", "near-miss"]
+    },
+    {
+      "id": "aadhaar-uidai-sandbox-compact",
+      "detector": "aadhaar",
+      "text": "Sandbox Aadhaar: 999999990019",
+      "expected": [{"type": "aadhaar", "count": 1}],
+      "tags": ["positive", "checksum", "official-sandbox"],
+      "note": "Published UIDAI developer sandbox value; not resident data."
+    },
+    {
+      "id": "aadhaar-uidai-sandbox-spaced",
+      "detector": "aadhaar",
+      "text": "Aadhaar 9999 9999 0019",
+      "expected": [{"type": "aadhaar", "count": 1}],
+      "tags": ["positive", "checksum", "separator", "official-sandbox"]
+    },
+    {
+      "id": "aadhaar-masked",
+      "detector": "aadhaar",
+      "text": "Masked Aadhaar xxxx-xxxx-0019",
+      "expected": [{"type": "aadhaar_masked", "count": 1}],
+      "tags": ["positive", "masked", "official-sandbox"]
+    },
+    {
+      "id": "aadhaar-invalid-checksum",
+      "detector": "aadhaar",
+      "text": "Aadhaar candidate 9999 9999 0018",
+      "expected": [],
+      "tags": ["negative", "near-miss", "checksum"]
+    },
+    {
+      "id": "aadhaar-repeated-zero",
+      "detector": "aadhaar",
+      "text": "Identifier 0000 0000 0000",
+      "expected": [],
+      "tags": ["negative", "near-miss", "checksum"]
+    },
+    {
+      "id": "aadhaar-embedded-digits",
+      "detector": "aadhaar",
+      "text": "Tracking 19999999900198",
+      "expected": [],
+      "tags": ["negative", "boundary", "tracking-id"]
+    },
+    {
+      "id": "phone-country-code",
+      "detector": "phone",
+      "text": "Test contact: +91 98765 43210",
+      "expected": [{"type": "phone", "count": 1}],
+      "tags": ["positive", "country-code", "synthetic"]
+    },
+    {
+      "id": "phone-leading-zero",
+      "detector": "phone",
+      "text": "Mobile 09876543210",
+      "expected": [{"type": "phone", "count": 1}],
+      "tags": ["positive", "leading-zero", "synthetic"]
+    },
+    {
+      "id": "phone-hyphenated",
+      "detector": "phone",
+      "text": "Call 98765-43210",
+      "expected": [{"type": "phone", "count": 1}],
+      "tags": ["positive", "separator", "synthetic"]
+    },
+    {
+      "id": "phone-invalid-prefix",
+      "detector": "phone",
+      "text": "Reference 1234567890",
+      "expected": [],
+      "tags": ["negative", "near-miss"]
+    },
+    {
+      "id": "phone-embedded-tracking",
+      "detector": "phone",
+      "text": "Shipment 9876543210123",
+      "expected": [],
+      "tags": ["negative", "boundary", "tracking-id"]
+    },
+    {
+      "id": "phone-date-time",
+      "detector": "phone",
+      "text": "Run at 2026-09-11 09:30:00",
+      "expected": [],
+      "tags": ["negative", "timestamp"]
+    },
+    {
+      "id": "email-standard",
+      "detector": "email",
+      "text": "Synthetic contact priya.shah@example.in",
+      "expected": [{"type": "email", "count": 1}],
+      "tags": ["positive", "synthetic"]
+    },
+    {
+      "id": "email-plus-tag",
+      "detector": "email",
+      "text": "Notify audit+plant@example.com",
+      "expected": [{"type": "email", "count": 1}],
+      "tags": ["positive", "plus-tag", "synthetic"]
+    },
+    {
+      "id": "email-subdomain",
+      "detector": "email",
+      "text": "Owner: test.user@sub.example.org",
+      "expected": [{"type": "email", "count": 1}],
+      "tags": ["positive", "subdomain", "synthetic"]
+    },
+    {
+      "id": "email-missing-domain",
+      "detector": "email",
+      "text": "Contact test.user@",
+      "expected": [],
+      "tags": ["negative", "near-miss"]
+    },
+    {
+      "id": "email-localhost",
+      "detector": "email",
+      "text": "Log token service@localhost",
+      "expected": [],
+      "tags": ["negative", "log-token"]
+    },
+    {
+      "id": "email-double-dot",
+      "detector": "email",
+      "text": "Malformed user@example..com",
+      "expected": [],
+      "tags": ["negative", "near-miss"]
+    },
+    {
+      "id": "name-labelled-two-token",
+      "detector": "person_name",
+      "text": "Employee name: Kavya Sharma",
+      "expected": [{"type": "person_name", "count": 1}],
+      "tags": ["positive", "labelled", "latin-script", "synthetic"]
+    },
+    {
+      "id": "name-sentence-context",
+      "detector": "person_name",
+      "text": "The report was reviewed by Arjun Mehta yesterday.",
+      "expected": [{"type": "person_name", "count": 1}],
+      "tags": ["positive", "sentence", "latin-script", "synthetic"]
+    },
+    {
+      "id": "name-single-token-label",
+      "detector": "person_name",
+      "text": "First name: Nisha",
+      "expected": [{"type": "person_name", "count": 1}],
+      "tags": ["positive", "labelled", "single-token", "latin-script", "synthetic"]
+    },
+    {
+      "id": "name-plant-name",
+      "detector": "person_name",
+      "text": "Phoenix Plant production report",
+      "expected": [],
+      "tags": ["negative", "organisation", "false-positive"]
+    },
+    {
+      "id": "name-month-heading",
+      "detector": "person_name",
+      "text": "May Report Final",
+      "expected": [],
+      "tags": ["negative", "heading", "false-positive"]
+    },
+    {
+      "id": "name-role-only",
+      "detector": "person_name",
+      "text": "Approved by Plant Manager",
+      "expected": [],
+      "tags": ["negative", "role"]
+    },
+    {
+      "id": "mixed-two-types",
+      "detector": "mixed",
+      "text": "Synthetic owner Kavya Sharma uses audit@example.in.",
+      "expected": [
+        {"type": "person_name", "count": 1},
+        {"type": "email", "count": 1}
+      ],
+      "tags": ["positive", "mixed", "synthetic"]
+    }
+  ]
+}

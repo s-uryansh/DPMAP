@@ -1,0 +1,1 @@
+"""Application metadata database package."""
