@@ -230,3 +230,14 @@
 - The real fixture produced four exact PII matches across quoted text, JSONB, and enum-capable discovery while excluding a binary canary. Runtime-generated target passwords and all matched canaries were absent from persisted inventory and API status serialization. A locked-table statement timeout ended as `failed/target_timeout`, rolled back, closed the target session, and cleared the credential registry; a missing role ended as sanitized `target_access_failed`.
 - Final verification passed against disposable `postgres:17-alpine`: `flake8 src tests`; 25 tests with no skips; 100% statement and branch coverage across 1,104 statements and 212 branches. The PostgreSQL container had `pg_stat_statements.track=all`, and the integration test fails rather than skips if the extension is unavailable.
 - Task 7 is complete. Task 8, the MySQL scan vertical slice, is next in dependency order. No credential, matched value, excerpt, sample, or value hash was persisted or logged.
+
+## 2026-09-15 10:27 IST - Task 6 acceptance re-audit
+
+- Re-audited each directory safety criterion before Task 8. Existing tests exercised warning paths and an RSS bound, but did not prove child symlink behavior, exact unreadable/mutation warning codes, malicious-shaped XLSX archives at the production limits, or report the measured RSS delta. Added those missing assertions without changing scanner behavior.
+- The focused unit suite now creates a real child symlink and proves it is returned as `symlink_skipped` without being scanned; simulates directory, path-entry, and file permission failures and proves `directory_unreadable`, `path_unreadable`, and `file_unreadable`; and mutates the second file stat result to prove `unstable_file` is attached to the completed read.
+- The XLSX defense test now creates an actual 10,001-entry archive and a malicious archive whose central directory advertises 200 MiB plus one byte of uncompressed content. The production limits reject them as `xlsx_too_many_entries` and `xlsx_too_large`; this no longer relies only on lowering limits around a normal workbook.
+- Verification passed: `flake8 src tests`; 6 focused directory scanner tests; and the directory API integration test against the real disposable PostgreSQL 17 service. Its 5 MiB streaming input used 1,408 KiB additional maximum RSS against the asserted 131,072 KiB ceiling. No source value was added to output or persistence.
+
+## 2026-09-15 10:27 IST - Task 8 decision gate
+
+- Task 8 has not started. Build-plan Open Question 7 still requires the project owner to define the supported MySQL server version and deployment OS; those choices determine the connector baseline, privilege introspection, and server-side statement trace used as acceptance evidence. Stopped before selecting them autonomously, as required by the plan and the owner's instruction to flag genuine open questions.

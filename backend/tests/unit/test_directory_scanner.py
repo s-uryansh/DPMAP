@@ -2,6 +2,9 @@ import csv
 import io
 import os
 from pathlib import Path
+import struct
+from types import SimpleNamespace
+from zipfile import ZipFile
 
 import pytest
 from openpyxl import Workbook
@@ -208,3 +211,88 @@ def test_traversal_surfaces_directory_and_entry_errors(tmp_path, monkeypatch) ->
         )
         results = list(directory.scan_directory(tmp_path, {"email"}))
     assert [result.warnings for result in results] == [("path_unreadable",)]
+
+
+def test_traversal_rejects_symlinks_without_following_them(tmp_path) -> None:
+    target = tmp_path / "target.txt"
+    target.write_text("linked@example.in")
+    link = tmp_path / "linked.txt"
+    link.symlink_to(target)
+
+    results = {result.path.name: result for result in directory.scan_directory(
+        tmp_path, {"email"}
+    )}
+
+    assert results["linked.txt"].warnings == ("symlink_skipped",)
+    assert not results["linked.txt"].scanned
+    assert not results["linked.txt"].items
+    assert results["target.txt"].scanned
+
+
+def test_unreadable_and_mutating_files_are_coverage_warnings(
+    tmp_path, monkeypatch
+) -> None:
+    denied = tmp_path / "denied.txt"
+    denied.write_text("denied@example.in")
+    original_open = Path.open
+
+    def controlled_open(path, *args, **kwargs):
+        if path == denied:
+            raise PermissionError
+        return original_open(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "open", controlled_open)
+        result = directory._scan_file(denied, frozenset({"email"}))
+    assert result.warnings == ("file_unreadable",)
+    assert not result.scanned
+
+    unstable = tmp_path / "unstable.txt"
+    unstable.write_text("no findings")
+    original_stat = Path.stat
+    calls = 0
+
+    def changing_stat(path, *args, **kwargs):
+        nonlocal calls
+        value = original_stat(path, *args, **kwargs)
+        if path != unstable:
+            return value
+        calls += 1
+        if calls == 1:
+            return value
+        return SimpleNamespace(
+            st_size=value.st_size,
+            st_mtime_ns=value.st_mtime_ns + 1,
+        )
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "stat", changing_stat)
+        result = directory._scan_file(unstable, frozenset({"email"}))
+    assert result.scanned
+    assert result.warnings == ("unstable_file",)
+
+
+def test_xlsx_archive_rejects_malicious_shapes(tmp_path) -> None:
+    too_many = tmp_path / "too-many-entries.xlsx"
+    with ZipFile(too_many, "w") as archive:
+        for index in range(directory.MAX_XLSX_ENTRIES + 1):
+            archive.writestr(f"entries/{index}", b"")
+    assert directory._scan_file(
+        too_many, frozenset({"email"})
+    ).warnings == ("xlsx_too_many_entries",)
+
+    oversized = tmp_path / "oversized-expansion.xlsx"
+    with ZipFile(oversized, "w") as archive:
+        archive.writestr("xl/worksheets/sheet1.xml", b"x")
+    payload = bytearray(oversized.read_bytes())
+    central_directory = payload.index(b"PK\x01\x02")
+    struct.pack_into(
+        "<I",
+        payload,
+        central_directory + 24,
+        directory.MAX_XLSX_UNCOMPRESSED_BYTES + 1,
+    )
+    oversized.write_bytes(payload)
+    assert directory._scan_file(
+        oversized, frozenset({"email"})
+    ).warnings == ("xlsx_too_large",)

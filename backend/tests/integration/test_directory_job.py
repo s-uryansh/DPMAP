@@ -163,7 +163,9 @@ def test_directory_job_api_streams_files_and_persists_only_aggregates(
         assert status[1]["locations_scanned"] == 5
         assert status[1]["bytes_scanned"] >= 5 * 1024 * 1024
         after_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        assert after_rss - before_rss < 128 * 1024
+        rss_growth_kib = after_rss - before_rss
+        print(f"task6_rss_growth_kib={rss_growth_kib}")
+        assert rss_growth_kib < 128 * 1024
 
         with session_factory() as database:
             job = database.get(ScanJob, created[1]["job_id"])
