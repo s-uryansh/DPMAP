@@ -13,6 +13,7 @@ dependencies = [
     "sqlalchemy==2.0.52",
     "spacy==3.8.16",
     "uvicorn==0.52.0",
+    "openpyxl==3.1.5",
 ]
 
 [dependency-groups]
@@ -25,7 +26,7 @@ dev = [
 
 [tool.pytest.ini_options]
 addopts = "--strict-config --strict-markers"
-pythonpath = ["src"]
+pythonpath = ["src", "tests"]
 testpaths = ["tests"]
 
 [tool.coverage.run]

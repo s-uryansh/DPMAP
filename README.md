@@ -1,7 +1,7 @@
 # DPMAP
 
 ![Build](https://img.shields.io/badge/build-passing-brightgreen)
-![Tests](https://img.shields.io/badge/tests-10%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/backend%20tests-25%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-not%20selected-lightgrey)
 ![Python](https://img.shields.io/badge/Python-3.11.15-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.141.1-009688)
@@ -35,7 +35,11 @@ Install and run the backend:
 ```bash
 cd DPMAP/backend
 uv sync --locked
-uv run --no-sync uvicorn dpmap.main:app --app-dir src --reload --port 8765
+APP_DB_URL=postgresql+psycopg://dpmap_app@localhost/dpmap \
+JWT_SECRET=replace-with-at-least-32-bytes \
+ALLOWED_SCAN_ROOTS=/srv/dpmap-scans \
+ALLOWED_DB_HOSTS=db.internal \
+  uv run --no-sync uvicorn dpmap.main:app --app-dir src --reload --port 8765
 ```
 
 Apply metadata migrations to an empty PostgreSQL database:
@@ -78,9 +82,14 @@ curl http://127.0.0.1:8765/health
 
 - `POST /api/v1/auth/login` issues a 15-minute JWT backed by a revocable session.
 - `POST /api/v1/auth/logout` revokes the current session.
+- `POST /api/v1/scans/directory` starts one asynchronous `.txt`/`.csv`/`.xlsx` directory job under `ALLOWED_SCAN_ROOTS`.
+- `POST /api/v1/scans/postgres` starts one asynchronous PostgreSQL job against an exact host in `ALLOWED_DB_HOSTS`; credentials remain in process memory only.
+- `GET /api/v1/jobs/{job_id}/status` returns progress, coverage, aggregate counts, and sanitized failures.
 - `PYTHONPATH=src uv run --no-sync python -m dpmap.cli create-admin --email admin@example.test` creates the first Admin using a hidden password prompt.
 
-Scanner and report endpoints remain unimplemented. Their accepted contract is documented in [the build plan](Docs/build-plan.md#9-api-contract).
+The PostgreSQL adapter is verified against PostgreSQL 17. It enforces read-only rollback-only transactions, quoted identifiers, bounded server cursors, statement/idle/total timeouts, and privilege reporting. `verify-full` TLS is the default; weaker modes require `ALLOW_INSECURE_TARGET_TLS=true` and produce a warning. MySQL and report endpoints remain unimplemented. Their accepted contract is documented in [the build plan](Docs/build-plan.md#9-api-contract).
+
+The internal detector pipeline now accepts bounded text chunks and returns only aggregate counts, confidence, and static reason codes. Matched values and source coordinates are discarded before serialization.
 
 Location locators are plain text in v1 and rely on RBAC and PostgreSQL access controls. See the [metadata retention and locator limitation](Docs/data-retention.md).
 
@@ -90,8 +99,10 @@ Location locators are plain text in v1 and rely on RBAC and PostgreSQL access co
 - [x] Task 2: Bootstrap pinned backend/frontend projects and CI - complete
 - [x] Task 3: Metadata schema and migrations - complete
 - [x] Task 4: Authentication and RBAC - complete
-- [ ] Task 5: Aggregate-and-discard boundary - not started
-- [ ] Tasks 6-8: Directory, PostgreSQL, and MySQL scans - not started
+- [x] Task 5: Aggregate-and-discard boundary - complete
+- [x] Task 6: Directory scan vertical slice - complete
+- [x] Task 7: PostgreSQL scan vertical slice - complete
+- [ ] Task 8: MySQL scan vertical slice - not started
 - [ ] Tasks 9-11: Batch orchestration, assessment, and reports - not started
 - [ ] Tasks 12-15: Operator and reviewer UI - not started
 - [ ] Tasks 16-18: Security proof, performance envelope, and release evidence - not started

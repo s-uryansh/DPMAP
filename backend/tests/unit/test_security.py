@@ -5,7 +5,7 @@ from pydantic import ValidationError
 
 from dpmap.api.dependencies import require_roles
 from dpmap.api.errors import ApiError
-from dpmap.api.schemas import LoginRequest
+from dpmap.api.schemas import DirectoryScanRequest, LoginRequest, PostgresScanRequest
 from dpmap.core.security import (
     decode_access_token,
     get_jwt_secret,
@@ -28,6 +28,32 @@ def test_security_boundaries_reject_invalid_input(monkeypatch) -> None:
 
     with pytest.raises(ValidationError):
         LoginRequest(email="invalid", password="long-enough-password")
+    with pytest.raises(ValidationError, match="detectors must be unique"):
+        DirectoryScanRequest(
+            label="test",
+            target_name="test",
+            path="/tmp/test",
+            detectors=["email", "email"],
+        )
+    postgres_request = {
+        "label": "test",
+        "target_name": "test",
+        "host": "db.example.test",
+        "port": 5432,
+        "database": "records",
+        "username": "reader",
+        "password": "request-only-secret",
+        "schemas": ["public"],
+        "detectors": ["email"],
+    }
+    with pytest.raises(ValidationError, match="schemas must be unique"):
+        PostgresScanRequest(**(postgres_request | {"schemas": ["x", "x"]}))
+    with pytest.raises(ValidationError, match="invalid schema"):
+        PostgresScanRequest(**(postgres_request | {"schemas": ["x\x00y"]}))
+    with pytest.raises(ValidationError, match="detectors must be unique"):
+        PostgresScanRequest(
+            **(postgres_request | {"detectors": ["email", "email"]})
+        )
 
     authorize = require_roles("admin", "auditor")
     viewer = SimpleNamespace(user=SimpleNamespace(role="viewer"))

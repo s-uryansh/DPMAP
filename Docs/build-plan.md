@@ -1,6 +1,6 @@
 # Build Plan: DPDPA Data Mapping and Section 8 Gap Assessment Engine v2
 
-**Status:** Implementation in progress — Tasks 1-4 complete  
+**Status:** Implementation in progress — Tasks 1-7 complete
 **Prepared:** 2026-09-11  
 **Implementation gate:** Open Questions 4-6 were resolved with owner-authorized engineering defaults on 11 September 2026. Remaining open questions are handled when their dependent task is reached.
 
@@ -379,6 +379,8 @@ Exact dependency versions are chosen and pinned during bootstrap after compatibi
 
 #### Task 5: Build aggregate-and-discard detector pipeline
 
+**Status:** Complete — verified against the frozen seed corpus on 11 September 2026; production corpus-size and DPO/legal review gates remain pending.
+
 **Description:** Implement compiled deterministic detectors, Aadhaar checksum, candidate merge, confidence/reason codes, and aggregate-only output; add spaCy name candidates behind a threshold.
 
 **Acceptance criteria:** Corpus precision/recall meets Task 1 gates; chunk-boundary matches are counted once; pipeline result contains no source substrings.
@@ -398,6 +400,8 @@ Exact dependency versions are chosen and pinned during bootstrap after compatibi
 
 #### Task 6: Deliver directory scan from API to inventory
 
+**Status:** Complete — verified with a real PostgreSQL 17 metadata store on 11 September 2026.
+
 **Description:** Add safe traversal, TXT/CSV/XLSX streaming, coordinator execution, progress, and aggregate inventory persistence for one directory job.
 
 **Acceptance criteria:** Supported files scan with bounded memory; permission/skipped/unstable files affect coverage; symlinks and disallowed roots are rejected/skipped.
@@ -409,6 +413,8 @@ Exact dependency versions are chosen and pinned during bootstrap after compatibi
 **Scope:** Medium.
 
 #### Task 7: Deliver PostgreSQL scan from API to inventory
+
+**Status:** Complete — verified with PostgreSQL 17 and a server-side SQL statement trace on 15 September 2026.
 
 **Description:** Add preflight, metadata discovery, enforced read-only transaction, quoted SELECTs, streaming batches, timeouts, and privilege status.
 
@@ -625,8 +631,6 @@ CI uses synthetic data only. Never copy production PII into fixtures or test art
 
 These choices materially change implementation or acceptance and need owner approval:
 
-1. Confirm that `.xlsx` satisfies "Excel" for v2; otherwise specify `.xls` support and its parser/security constraints.
-2. Approve the single-coordinator, non-resumable credential model for v2, or name the enterprise secret manager required for durable external workers.
 3. Provide allowed database network ranges/DNS suffixes and filesystem roots for each deployment.
 5. Clarify whether preconfigured custom identifiers are required at first release and who can deploy/version them.
 6. Confirm whether JSON/XML inside DB text columns and CSV cells must be parsed structurally or scanned as bounded text in v2; the proposed baseline scans them as text.
@@ -634,6 +638,7 @@ These choices materially change implementation or acceptance and need owner appr
 
 ### Resolved Decision Gates
 
+- Directory scan scope and execution: on 11 September 2026 the project owner confirmed `.xlsx` as the v2 Excel format, leaving legacy `.xls` excluded, and approved the bounded single-instance, non-resumable in-process coordinator. Network shares remain Infra-mounted service-visible paths; horizontal workers still require approved short-lived secret references.
 - Original Open Questions 4-6: on 11 September 2026 the project owner authorized conservative engineering defaults for detector gates, English/Latin-script name scope, and risk/evidence rules. They are versioned in backend/src/dpmap/engine/assessment/rules.v1.json and explicitly remain pending qualified DPO/legal review; they are not production-ready compliance guidance.
 - Metadata retention and locator storage: on 11 September 2026 the project owner authorized a 90-day post-completion retention period for jobs, inventory, remediations, and their reports; a one-year period for audit events; and plain-text location locators protected by application RBAC and database access controls only. This is an engineering-adopted default pending real DPO/legal review, not production-ready compliance guidance. Plain-text locators without column-level encryption are a documented v1 limitation.
 
