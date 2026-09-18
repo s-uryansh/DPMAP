@@ -24,8 +24,20 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -uroot"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     env:
       TEST_APP_DB_URL: postgresql+psycopg://postgres@127.0.0.1:5432/dpmap_test
+      TEST_MYSQL_PORT: 3306
     defaults:
       run:
         working-directory: backend

@@ -7,11 +7,17 @@ from threading import Lock
 from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from dpmap.db.models import ScanInventoryItem, ScanJob
 from dpmap.db.session import _session_factory
 from dpmap.engine.detectors.pipeline import DETECTOR_VERSION
 from dpmap.engine.scanners.directory import scan_directory
+from dpmap.engine.scanners.mysql import (
+    MySQLScanError,
+    MySQLTarget,
+    scan_mysql,
+)
 from dpmap.engine.scanners.postgres import (
     DatabaseColumnResult,
     PostgresScanError,
@@ -22,12 +28,35 @@ from dpmap.engine.scanners.postgres import (
 
 # ponytail: single-process pool; use secret-referenced workers when HA is required.
 _EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="dpmap-scan")
-_DATABASE_TARGETS: dict[UUID, PostgresTarget] = {}
+_DATABASE_TARGETS: dict[UUID, PostgresTarget | MySQLTarget] = {}
 _DATABASE_TARGETS_LOCK = Lock()
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def fail_orphaned_jobs(database_url: str) -> int:
+    """Fail jobs whose request-only access context was lost on restart."""
+    with _DATABASE_TARGETS_LOCK:
+        _DATABASE_TARGETS.clear()
+    with _session_factory(database_url)() as database:
+        jobs = database.scalars(
+            select(ScanJob).where(
+                ScanJob.status.in_(("pending", "validating", "running"))
+            )
+        ).all()
+        failed_at = _now()
+        for job in jobs:
+            job.status = "failed"
+            job.stage = "failed"
+            job.coverage_status = "failed"
+            job.error_code = "access_context_lost"
+            job.error_message = "Scan access context was lost during restart"
+            job.finished_at = failed_at
+            job.heartbeat_at = failed_at
+        database.commit()
+        return len(jobs)
 
 
 def submit_directory_job(
@@ -150,10 +179,32 @@ def submit_postgres_job(
     detectors: frozenset[str],
     database_url: str,
 ) -> None:
+    _submit_database_job(
+        _run_postgres_job, job_id, target, detectors, database_url
+    )
+
+
+def submit_mysql_job(
+    *,
+    job_id: UUID,
+    target: MySQLTarget,
+    detectors: frozenset[str],
+    database_url: str,
+) -> None:
+    _submit_database_job(_run_mysql_job, job_id, target, detectors, database_url)
+
+
+def _submit_database_job(
+    runner,
+    job_id: UUID,
+    target: PostgresTarget | MySQLTarget,
+    detectors: frozenset[str],
+    database_url: str,
+) -> None:
     with _DATABASE_TARGETS_LOCK:
         _DATABASE_TARGETS[job_id] = target
     try:
-        _EXECUTOR.submit(_run_postgres_job, job_id, detectors, database_url)
+        _EXECUTOR.submit(runner, job_id, detectors, database_url)
     except Exception:
         with _DATABASE_TARGETS_LOCK:
             _DATABASE_TARGETS.pop(job_id, None)
@@ -194,6 +245,37 @@ def _persist_database_result(
 def _run_postgres_job(
     job_id: UUID, detectors: frozenset[str], database_url: str
 ) -> None:
+    _run_database_job(
+        job_id,
+        detectors,
+        database_url,
+        scan_postgres,
+        PostgresScanError,
+        "verify-full",
+    )
+
+
+def _run_mysql_job(
+    job_id: UUID, detectors: frozenset[str], database_url: str
+) -> None:
+    _run_database_job(
+        job_id,
+        detectors,
+        database_url,
+        scan_mysql,
+        MySQLScanError,
+        "verify-identity",
+    )
+
+
+def _run_database_job(
+    job_id: UUID,
+    detectors: frozenset[str],
+    database_url: str,
+    scanner,
+    scanner_error,
+    verified_tls_mode: str,
+) -> None:
     with _DATABASE_TARGETS_LOCK:
         target = _DATABASE_TARGETS.get(job_id)
     if target is None:
@@ -210,12 +292,12 @@ def _run_postgres_job(
             job.heartbeat_at = job.started_at
             database.commit()
 
-            permission, unsupported = scan_postgres(
+            permission, unsupported = scanner(
                 target,
                 detectors,
                 lambda result: _persist_database_result(database, job, result),
             )
-            warnings = unsupported + (target.tls_mode != "verify-full") + (
+            warnings = unsupported + (target.tls_mode != verified_tls_mode) + (
                 permission != "verified_limited"
             )
             finished = _now()
@@ -231,7 +313,7 @@ def _run_postgres_job(
             job.finished_at = finished
             job.heartbeat_at = finished
             database.commit()
-    except PostgresScanError as error:
+    except scanner_error as error:
         _fail_job(
             database_url,
             job_id,

@@ -5,7 +5,13 @@ from pydantic import ValidationError
 
 from dpmap.api.dependencies import require_roles
 from dpmap.api.errors import ApiError
-from dpmap.api.schemas import DirectoryScanRequest, LoginRequest, PostgresScanRequest
+from dpmap.api.schemas import (
+    BatchCreateRequest,
+    DirectoryScanRequest,
+    LoginRequest,
+    MySQLScanRequest,
+    PostgresScanRequest,
+)
 from dpmap.core.security import (
     decode_access_token,
     get_jwt_secret,
@@ -54,6 +60,40 @@ def test_security_boundaries_reject_invalid_input(monkeypatch) -> None:
         PostgresScanRequest(
             **(postgres_request | {"detectors": ["email", "email"]})
         )
+    mysql_request = postgres_request | {"port": 3306}
+    mysql_request.pop("schemas")
+    with pytest.raises(ValidationError, match="detectors must be unique"):
+        MySQLScanRequest(
+            **(mysql_request | {"detectors": ["email", "email"]})
+        )
+    batch_target = {
+        "client_ref": "db",
+        "target_name": "Database",
+        "type": "database",
+        "database": mysql_request | {"engine": "mysql"},
+        "scope": {"schemas": ["public"]},
+        "detectors": ["email"],
+    }
+    batch_target["database"].pop("label")
+    batch_target["database"].pop("target_name")
+    batch_target["database"].pop("detectors")
+    with pytest.raises(ValidationError, match="schemas must be unique"):
+        BatchCreateRequest(
+            label="batch",
+            targets=[batch_target | {"scope": {"schemas": ["x", "x"]}}],
+        )
+    with pytest.raises(ValidationError, match="invalid schema"):
+        BatchCreateRequest(
+            label="batch",
+            targets=[batch_target | {"scope": {"schemas": ["x\x00y"]}}],
+        )
+    with pytest.raises(ValidationError, match="detectors must be unique"):
+        BatchCreateRequest(
+            label="batch",
+            targets=[batch_target | {"detectors": ["email", "email"]}],
+        )
+    with pytest.raises(ValidationError, match="client_ref values must be unique"):
+        BatchCreateRequest(label="batch", targets=[batch_target, batch_target])
 
     authorize = require_roles("admin", "auditor")
     viewer = SimpleNamespace(user=SimpleNamespace(role="viewer"))

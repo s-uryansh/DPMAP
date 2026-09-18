@@ -1,7 +1,7 @@
 # DPMAP
 
 ![Build](https://img.shields.io/badge/build-passing-brightgreen)
-![Tests](https://img.shields.io/badge/backend%20tests-25%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/backend%20tests-39%20passing-brightgreen)
 ![License](https://img.shields.io/badge/license-not%20selected-lightgrey)
 ![Python](https://img.shields.io/badge/Python-3.11.15-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.141.1-009688)
@@ -73,7 +73,7 @@ npm run build
 
 ## Usage
 
-The API currently exposes process health and authentication:
+The API currently exposes process health, authentication, single-target scans, and multi-target batch orchestration:
 
 ```bash
 curl http://127.0.0.1:8765/health
@@ -84,10 +84,15 @@ curl http://127.0.0.1:8765/health
 - `POST /api/v1/auth/logout` revokes the current session.
 - `POST /api/v1/scans/directory` starts one asynchronous `.txt`/`.csv`/`.xlsx` directory job under `ALLOWED_SCAN_ROOTS`.
 - `POST /api/v1/scans/postgres` starts one asynchronous PostgreSQL job against an exact host in `ALLOWED_DB_HOSTS`; credentials remain in process memory only.
+- `POST /api/v1/scans/mysql` starts one asynchronous MySQL job under the same aggregate-only contract.
+- `POST /api/v1/batches` atomically creates up to 20 independently executed directory, PostgreSQL, or MySQL jobs; one target failure does not stop siblings.
 - `GET /api/v1/jobs/{job_id}/status` returns progress, coverage, aggregate counts, and sanitized failures.
+- `GET /api/v1/batches/{batch_id}/status` derives the batch outcome from its children, including `completed_with_failures` for mixed terminal results.
 - `PYTHONPATH=src uv run --no-sync python -m dpmap.cli create-admin --email admin@example.test` creates the first Admin using a hidden password prompt.
 
-The PostgreSQL adapter is verified against PostgreSQL 17. It enforces read-only rollback-only transactions, quoted identifiers, bounded server cursors, statement/idle/total timeouts, and privilege reporting. `verify-full` TLS is the default; weaker modes require `ALLOW_INSECURE_TARGET_TLS=true` and produce a warning. MySQL and report endpoints remain unimplemented. Their accepted contract is documented in [the build plan](Docs/build-plan.md#9-api-contract).
+The PostgreSQL adapter is verified against PostgreSQL 17. It enforces read-only rollback-only transactions, quoted identifiers, bounded server cursors, statement/idle/total timeouts, and privilege reporting. `verify-full` TLS is the default; weaker modes require `ALLOW_INSECURE_TARGET_TLS=true` and produce a warning.
+
+The MySQL adapter is verified against MySQL 8.4.11 on Linux/Docker. It pins the resolved target address, requires `MYSQL_SSL_CA` for the default `verify-identity` mode, enforces and verifies a read-only transaction, safely quotes identifiers, streams unbuffered 256-row batches, reports excessive privileges and unsupported types, and always rolls back. Weaker `verify-ca`, `required`, or `disable` modes require `ALLOW_INSECURE_TARGET_TLS=true` and produce a warning. Report endpoints remain unimplemented.
 
 The internal detector pipeline now accepts bounded text chunks and returns only aggregate counts, confidence, and static reason codes. Matched values and source coordinates are discarded before serialization.
 
@@ -102,8 +107,9 @@ Location locators are plain text in v1 and rely on RBAC and PostgreSQL access co
 - [x] Task 5: Aggregate-and-discard boundary - complete
 - [x] Task 6: Directory scan vertical slice - complete
 - [x] Task 7: PostgreSQL scan vertical slice - complete
-- [ ] Task 8: MySQL scan vertical slice - not started
-- [ ] Tasks 9-11: Batch orchestration, assessment, and reports - not started
+- [x] Task 8: MySQL scan vertical slice - complete
+- [x] Task 9: Batch orchestration and mixed outcomes - complete
+- [ ] Tasks 10-11: Assessment and reports - not started
 - [ ] Tasks 12-15: Operator and reviewer UI - not started
 - [ ] Tasks 16-18: Security proof, performance envelope, and release evidence - not started
 

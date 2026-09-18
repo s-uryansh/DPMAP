@@ -132,7 +132,7 @@ legal/control vocabulary + detector corpus
 
 - Use `NullPool`/one-shot connections so target credentials and idle sessions are not retained. SQLAlchemy documents [`NullPool`](https://docs.sqlalchemy.org/en/20/core/pooling.html) as opening/closing per connection.
 - Require TLS verification by default; weakening it requires an explicit warning and configuration flag.
-- Set PostgreSQL or MySQL transaction mode to read-only before scanning. PostgreSQL documents the restrictions and limits of [`READ ONLY`](https://www.postgresql.org/docs/current/sql-set-transaction.html); MySQL notes temporary-table exceptions in [`START TRANSACTION READ ONLY`](https://dev.mysql.com/doc/refman/26.7/en/commit.html).
+- Set PostgreSQL or MySQL transaction mode to read-only before scanning. PostgreSQL documents the restrictions and limits of [`READ ONLY`](https://www.postgresql.org/docs/current/sql-set-transaction.html); MySQL notes temporary-table exceptions in [`START TRANSACTION READ ONLY`](https://dev.mysql.com/doc/refman/8.4/en/innodb-performance-ro-txn.html).
 - Use server-side/unbuffered cursors and fixed batches. Psycopg and SQLAlchemy document [server cursors](https://www.psycopg.org/psycopg3/docs/advanced/cursors.html) and [`yield_per`](https://docs.sqlalchemy.org/en/20/core/engines_connections.html).
 - Generate only metadata queries and `SELECT` statements. Quote discovered identifiers through the driver/expression API. Do not concatenate identifiers or accept free-form SQL.
 - Scan textual, character, enum, and JSON textual content; skip binary/spatial/unsupported types with coverage reasons.
@@ -428,6 +428,8 @@ Exact dependency versions are chosen and pinned during bootstrap after compatibi
 
 #### Task 8: Deliver MySQL scan through the same contract
 
+**Status:** Complete — verified with MySQL 8.4.11 on Linux/Docker and server-side Performance Schema SQL traces on 15 September 2026.
+
 **Description:** Implement MySQL-specific metadata, read-only transaction, privilege introspection, and unbuffered streaming behind the shared database adapter contract.
 
 **Acceptance criteria:** Same behavioral contract as PostgreSQL; MySQL failures use shared error codes; unsupported types are coverage warnings.
@@ -446,6 +448,8 @@ Exact dependency versions are chosen and pinned during bootstrap after compatibi
 ### Phase 3 - Batch, Assessment, and Reports
 
 #### Task 9: Implement batch orchestration and mixed outcomes
+
+**Status:** Complete — verified with a real PostgreSQL 17 metadata/scan target and mixed directory/PostgreSQL/failing-target execution on 15 September 2026.
 
 **Description:** Create all target jobs together, preflight/run siblings independently, derive batch status, and enforce same-target exclusion.
 
@@ -634,13 +638,13 @@ These choices materially change implementation or acceptance and need owner appr
 3. Provide allowed database network ranges/DNS suffixes and filesystem roots for each deployment.
 5. Clarify whether preconfigured custom identifiers are required at first release and who can deploy/version them.
 6. Confirm whether JSON/XML inside DB text columns and CSV cells must be parsed structurally or scanned as bounded text in v2; the proposed baseline scans them as text.
-7. Define supported PostgreSQL/MySQL server versions and deployment OS; these determine tested drivers, privilege queries, and UNC behavior.
 
 ### Resolved Decision Gates
 
 - Directory scan scope and execution: on 11 September 2026 the project owner confirmed `.xlsx` as the v2 Excel format, leaving legacy `.xls` excluded, and approved the bounded single-instance, non-resumable in-process coordinator. Network shares remain Infra-mounted service-visible paths; horizontal workers still require approved short-lived secret references.
 - Original Open Questions 4-6: on 11 September 2026 the project owner authorized conservative engineering defaults for detector gates, English/Latin-script name scope, and risk/evidence rules. They are versioned in backend/src/dpmap/engine/assessment/rules.v1.json and explicitly remain pending qualified DPO/legal review; they are not production-ready compliance guidance.
 - Metadata retention and locator storage: on 11 September 2026 the project owner authorized a 90-day post-completion retention period for jobs, inventory, remediations, and their reports; a one-year period for audit events; and plain-text location locators protected by application RBAC and database access controls only. This is an engineering-adopted default pending real DPO/legal review, not production-ready compliance guidance. Plain-text locators without column-level encryption are a documented v1 limitation.
+- MySQL baseline: on 15 September 2026 the project owner authorized MySQL 8.4 LTS on Linux/Docker for Task 8 development and verification. This is an engineering-adopted default pending real DPO/legal or Infra review of actual deployment targets; it does not establish support for other MySQL versions or operating systems.
 
 ## 16. Sources Consulted
 
@@ -660,8 +664,9 @@ These choices materially change implementation or acceptance and need owner appr
 - [Microsoft Presidio analyzer design](https://microsoft.github.io/presidio/analyzer/)
 - [PostgreSQL read-only transactions](https://www.postgresql.org/docs/current/sql-set-transaction.html)
 - [Psycopg server-side cursors](https://www.psycopg.org/psycopg3/docs/advanced/cursors.html)
-- [MySQL read-only transactions](https://dev.mysql.com/doc/refman/26.7/en/commit.html)
+- [MySQL 8.4 read-only transactions](https://dev.mysql.com/doc/refman/8.4/en/set-transaction.html)
 - [MySQL Connector/Python unbuffered result behavior](https://dev.mysql.com/doc/connector-python/en/connector-python-connectargs.html)
+- [MySQL 8.4 Performance Schema statement events](https://dev.mysql.com/doc/refman/8.4/en/performance-schema-statement-tables.html)
 - [SQLAlchemy pooling](https://docs.sqlalchemy.org/en/20/core/pooling.html)
 - [SQLAlchemy streaming results](https://docs.sqlalchemy.org/en/20/core/engines_connections.html)
 - [Python 3.11 filesystem traversal](https://docs.python.org/3.11/library/os.html)
